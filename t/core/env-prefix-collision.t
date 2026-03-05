@@ -48,11 +48,11 @@ TOKEN_FILE=/path/to/token
 
 
 
-=== TEST 3: init_worker phase os.getenv prefix collision
+=== TEST 3: init phase os.getenv prefix collision
 --- main_config
 env KUBERNETES_CLIENT_TOKEN=some-token;
 env KUBERNETES_CLIENT_TOKEN_FILE=/path/to/token;
---- extra_init_worker_by_lua
+--- extra_init_by_lua
         ngx.shared["test"]:set("iw_token", os.getenv("KUBERNETES_CLIENT_TOKEN") or "NIL")
         ngx.shared["test"]:set("iw_token_file", os.getenv("KUBERNETES_CLIENT_TOKEN_FILE") or "NIL")
 --- config

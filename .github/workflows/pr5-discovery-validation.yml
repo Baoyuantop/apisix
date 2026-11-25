@@ -1,0 +1,38 @@
+name: PR 5 discovery validation
+
+on:
+  push:
+    branches: [codex/pr5-discovery-validation-20261126]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  kubernetes-custom:
+    uses: ./.github/workflows/pr5-discovery-suite.yml
+    with:
+      suite: kubernetes
+      runtime: custom
+
+  tars-custom:
+    uses: ./.github/workflows/pr5-discovery-suite.yml
+    with:
+      suite: tars
+      runtime: custom
+
+  kubernetes-baseline:
+    needs: kubernetes-custom
+    if: ${{ !cancelled() && needs.kubernetes-custom.result == 'failure' }}
+    uses: ./.github/workflows/pr5-discovery-suite.yml
+    with:
+      suite: kubernetes
+      runtime: baseline
+
+  tars-baseline:
+    needs: tars-custom
+    if: ${{ !cancelled() && needs.tars-custom.result == 'failure' }}
+    uses: ./.github/workflows/pr5-discovery-suite.yml
+    with:
+      suite: tars
+      runtime: baseline

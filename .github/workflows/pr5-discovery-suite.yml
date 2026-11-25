@@ -1,0 +1,172 @@
+name: PR 5 discovery suite
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        required: true
+        type: string
+      runtime:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SERVER_NAME: linux_openresty
+      OPENRESTY_VERSION: default
+      SUITE: ${{ inputs.suite }}
+      EXPECTED_CUSTOM_NGINX_SHA256: 8024e7617519fac096106de99091fa95cb2155475161b8520f6f315f70549c1e
+    steps:
+      - name: Check out PR 5 source
+        uses: actions/checkout@v4
+        with:
+          ref: d0ddcc0afada0f30ad308d9babcb0bc33d6d4c63
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.17'
+          cache: false
+
+      - name: Download the Runtime from the PR run
+        if: inputs.runtime == 'custom'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45639780655'
+          name: custom-apisix-runtime
+
+      - name: Install dependencies and Runtime
+        env:
+          RUNTIME_MODE: ${{ inputs.runtime }}
+        run: |
+          sudo ./ci/linux_openresty_runner.sh before_install
+          if [[ "$RUNTIME_MODE" == custom ]]; then
+            export PREBUILT_RUNTIME_TARBALL="$GITHUB_WORKSPACE/apisix-runtime-1.3.2-custom.tar.gz"
+          fi
+          sudo --preserve-env=OPENRESTY_VERSION,PREBUILT_RUNTIME_TARBALL ./ci/linux_openresty_runner.sh do_install
+
+      - name: Verify installed Runtime
+        env:
+          RUNTIME_MODE: ${{ inputs.runtime }}
+        run: |
+          echo "runtime_requested=$RUNTIME_MODE"
+          /usr/local/openresty/bin/openresty -V
+          nginx_sha256=$(sha256sum /usr/local/openresty/nginx/sbin/nginx | cut -d ' ' -f 1)
+          echo "nginx_sha256=$nginx_sha256"
+          if [[ "$RUNTIME_MODE" == custom ]]; then
+            cat /usr/local/openresty/.custom-runtime-meta
+            grep -qx 'runtime_mode=custom' /usr/local/openresty/.custom-runtime-meta
+            grep -qx 'apisix_runtime=1.3.2' /usr/local/openresty/.custom-runtime-meta
+            test "$nginx_sha256" = "$EXPECTED_CUSTOM_NGINX_SHA256"
+          else
+            test ! -e /usr/local/openresty/.custom-runtime-meta
+            test "$nginx_sha256" != "$EXPECTED_CUSTOM_NGINX_SHA256"
+          fi
+
+      - name: Set up the Kind cluster
+        if: inputs.suite == 'kubernetes'
+        run: |
+          kind create cluster --name apisix-test --config t/kubernetes/configs/kind.yaml --image kindest/node:v1.22.7
+          kubectl wait --for=condition=Ready nodes --all --timeout=180s
+          kubectl apply -f t/kubernetes/configs/account.yaml
+          kubectl apply -f t/kubernetes/configs/endpoint.yaml
+
+          token_file=/tmp/var/run/secrets/kubernetes.io/serviceaccount/token
+          mkdir -p "$(dirname "$token_file")"
+          umask 077
+          for _ in {1..30}; do
+            secret=$(kubectl get serviceaccount apisix-test -o jsonpath='{.secrets[0].name}')
+            if [[ -n "$secret" ]]; then
+              kubectl get secret "$secret" -o jsonpath='{.data.token}' | base64 --decode > "$token_file"
+              if [[ -s "$token_file" ]]; then
+                break
+              fi
+            fi
+            sleep 1
+          done
+          test -s "$token_file"
+          echo "::add-mask::$(cat "$token_file")"
+
+      - name: Set up the Tars database
+        if: inputs.suite == 'tars'
+        run: |
+          docker run --detach --name tars-mysql --publish 127.0.0.1:3306:3306 \
+            --env MYSQL_ROOT_PASSWORD=tars2022 \
+            --volume "$GITHUB_WORKSPACE/t/tars/conf/tars.sql:/docker-entrypoint-initdb.d/tars.sql:ro" \
+            mysql:5.7
+          for _ in {1..60}; do
+            if docker exec tars-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=TCP -h 127.0.0.1 -uroot db_tars -e "SELECT COUNT(*) FROM t_server_conf; SELECT COUNT(*) FROM t_adapter_conf;"' >/dev/null 2>&1; then
+              echo 'Tars database tables are ready.'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs tars-mysql
+          exit 1
+
+      - name: Run discovery cases and verify file coverage
+        run: |
+          export PATH="/usr/local/openresty/nginx/sbin:/usr/local/openresty/luajit/bin:/usr/local/openresty/bin:$PATH"
+          export PERL5LIB=".:${PERL5LIB:-}"
+          if [[ "$SUITE" == kubernetes ]]; then
+            kubectl proxy --port=6445 > "$RUNNER_TEMP/kubectl-proxy.log" 2>&1 &
+            proxy_pid=$!
+            trap 'kill "$proxy_pid" 2>/dev/null || true' EXIT
+            for _ in {1..30}; do
+              if kubectl --server=http://127.0.0.1:6445 get --raw /api/v1 >/dev/null 2>&1; then
+                break
+              fi
+              sleep 1
+            done
+            kubectl --server=http://127.0.0.1:6445 get --raw /api/v1 >/dev/null
+            expected_count=4
+          else
+            expected_count=2
+          fi
+
+          log="$RUNNER_TEMP/discovery-$SUITE.log"
+          mapfile -t test_files < <(git ls-files "t/$SUITE" | awk '/\.t$/')
+          test "${#test_files[@]}" -eq "$expected_count"
+          set +e
+          prove --timer -Itest-nginx/lib -I./ -r "t/$SUITE" 2>&1 | tee "$log"
+          result="${PIPESTATUS[0]}"
+          set -e
+
+          coverage_ok=1
+          for file in "${test_files[@]}"; do
+            if awk -v file="$file" '$2 == file && $3 ~ /^\.+$/ && $4 !~ /^skip/ {found=1} END {exit !found}' "$log"; then
+              echo "Ran $file"
+            else
+              echo "::error::No executed result for $file"
+              coverage_ok=0
+            fi
+          done
+          if grep -Eiq 'Bailout called|Bail out!|Further testing stopped|Test run interrupted' "$log"; then
+            echo '::error::Test suite bailed out'
+            coverage_ok=0
+          fi
+          grep -q "^Files=$expected_count," "$log"
+          test "$coverage_ok" -eq 1
+          test "$result" -eq 0
+          grep -qx 'Result: PASS' "$log"
+
+      - name: Upload discovery test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-${{ inputs.suite }}-${{ inputs.runtime }}-logs
+          path: |
+            ${{ runner.temp }}/discovery-${{ inputs.suite }}.log
+            ${{ runner.temp }}/kubectl-proxy.log
+          if-no-files-found: ignore
+          retention-days: 7

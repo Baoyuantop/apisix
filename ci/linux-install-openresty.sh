@@ -51,11 +51,24 @@ if [ "$OPENRESTY_VERSION" == "source" ]; then
     fi
 fi
 
-install_apisix_runtime
+if [ -n "${PREBUILT_RUNTIME_TARBALL:-}" ]; then
+    echo "Installing prebuilt APISIX Runtime from ${PREBUILT_RUNTIME_TARBALL}"
+    test -f "${PREBUILT_RUNTIME_TARBALL}"
+    sudo rm -rf /usr/local/openresty
+    sudo tar -xzf "${PREBUILT_RUNTIME_TARBALL}" -C /usr/local/
+    ldd /usr/local/openresty/nginx/sbin/nginx
+    /usr/local/openresty/bin/openresty -V
+    sha256sum /usr/local/openresty/nginx/sbin/nginx
+    if [ -f /usr/local/openresty/.custom-runtime-meta ]; then
+        cat /usr/local/openresty/.custom-runtime-meta
+    fi
+else
+    install_apisix_runtime
 
-if [ ! "$ENABLE_FIPS" == "true" ]; then
-curl -o /usr/local/openresty/openssl3/ssl/openssl.cnf \
-    https://raw.githubusercontent.com/api7/apisix-build-tools/apisix-runtime/${APISIX_RUNTIME}/conf/openssl3/openssl.cnf
+    if [ ! "$ENABLE_FIPS" == "true" ]; then
+    curl -o /usr/local/openresty/openssl3/ssl/openssl.cnf \
+        https://raw.githubusercontent.com/api7/apisix-build-tools/apisix-runtime/${APISIX_RUNTIME}/conf/openssl3/openssl.cnf
+    fi
 fi
 
 # patch lua-resty-events

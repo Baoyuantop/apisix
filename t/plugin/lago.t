@@ -67,7 +67,8 @@ property "event_properties" validation failed: wrong type: expected object, got 
 
 
 === TEST 2: test
---- timeout: 300
+--- timeout: 302
+--- exec_timeout: 300
 --- max_size: 2048000
 --- exec
 cd t && pnpm test plugin/lago.spec.mts 2>&1

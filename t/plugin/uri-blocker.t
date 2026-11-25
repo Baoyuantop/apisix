@@ -51,7 +51,7 @@ location /t {
 GET /t
 --- error_code: 400
 --- response_body_like eval
-qr!\A\{"error_msg":"failed to check the configuration of plugin uri-blocker err: (?:pcre_compile\(\) failed: missing \)|pcre2_compile\(\) failed: missing closing parenthesis) in \\"\.\+\(\\""\}\z!
+qr!\A\{"error_msg":"failed to check the configuration of plugin uri-blocker err: (?:pcre_compile\(\) failed: missing \)|pcre2_compile\(\) failed: missing closing parenthesis) in \\"\.\+\(\\""\}(?:\r?\n)?\z!
 
 
 
@@ -112,7 +112,7 @@ location /t {
 GET /t
 --- error_code: 400
 --- response_body_like eval
-qr!\A\{"error_msg":"failed to check the configuration of plugin uri-blocker err: (?:pcre_compile\(\) failed: missing \)|pcre2_compile\(\) failed: missing closing parenthesis) in \\"\^b\(\\""\}\z!
+qr!\A\{"error_msg":"failed to check the configuration of plugin uri-blocker err: (?:pcre_compile\(\) failed: missing \)|pcre2_compile\(\) failed: missing closing parenthesis) in \\"\^b\(\\""\}(?:\r?\n)?\z!
 
 
 

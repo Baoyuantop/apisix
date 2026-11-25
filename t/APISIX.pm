@@ -369,6 +369,7 @@ _EOC_
         chomp  $exec_snippet;
         chomp $stdin;
 
+        my $exec_timeout = $block->exec_timeout // $timeout;
         my $max_size = $block->max_size // 8096;
         $block->set_value("request", "GET /exec_request");
 
@@ -377,11 +378,13 @@ _EOC_
             location /exec_request {
                 content_by_lua_block {
                     local shell = require("resty.shell")
-                    local ok, stdout, stderr, reason, status = shell.run([[ $exec_snippet ]], $stdin, @{[$timeout*1000]}, $max_size)
+                    local ok, stdout, stderr, reason, status = shell.run([[ $exec_snippet ]], $stdin, @{[$exec_timeout*1000]}, $max_size)
                     if not ok then
-                        ngx.log(ngx.WARN, "failed to execute the script with status: " .. status .. ", reason: " .. reason .. ", stderr: " .. stderr)
-                        ngx.print("stdout: ", stdout)
-                        ngx.print("stderr: ", stderr)
+                        ngx.log(ngx.WARN, "failed to execute the script with status: ", status or "nil",
+                                ", reason: ", reason or "nil",
+                                ", stdout: ", stdout or "", ", stderr: ", stderr or "")
+                        ngx.print("stdout: ", stdout or "")
+                        ngx.print("stderr: ", stderr or "")
                         return
                     end
                     ngx.print(stdout)

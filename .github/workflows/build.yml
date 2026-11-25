@@ -67,8 +67,8 @@ jobs:
           - lua-resty-worker-events
           - lua-resty-events
         test_dir:
-          - t/plugin/[a-k]*
-          - t/plugin/[l-z]*
+          - t/plugin/[a-k]*.t t/plugin/dubbo-proxy t/plugin/ext-plugin
+          - t/plugin/[l-z]*.t t/plugin/proxy-cache
           - t/admin t/cli t/config-center-yaml t/control t/core t/debug t/discovery t/error_page t/http3/admin t/misc
           - t/node t/pubsub t/router t/script t/secret t/stream-node t/utils t/wasm t/xds-library t/xrpc
 
@@ -133,6 +133,7 @@ jobs:
 
       - name: Linux launch common services
         run: |
+          echo '127.0.1.1 httpbin.local' | sudo tee -a /etc/hosts
           make ci-env-up project_compose_ci=ci/pod/docker-compose.common.yml
           sudo ./ci/init-common-test-service.sh
 

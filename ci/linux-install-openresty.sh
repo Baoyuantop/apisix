@@ -27,12 +27,22 @@ if [[ $ARCH == "arm64" ]] || [[ $ARCH == "aarch64" ]]; then
     arch_path="arm64/"
 fi
 
-wget -qO - https://openresty.org/package/pubkey.gpg | sudo apt-key add -
-wget -qO - http://repos.apiseven.com/pubkey.gpg | sudo apt-key add -
 sudo apt-get -y update --fix-missing
-sudo apt-get -y install software-properties-common
-sudo add-apt-repository -y "deb https://openresty.org/package/${arch_path}ubuntu $(lsb_release -sc) main"
-sudo add-apt-repository -y "deb http://repos.apiseven.com/packages/${arch_path}debian bullseye main"
+sudo apt-get -y install wget lsb-release gnupg
+sudo mkdir -p /etc/apt/keyrings
+wget -qO - https://openresty.org/package/pubkey.gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/openresty.gpg
+wget -qO - https://repos.apiseven.com/pubkey.gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/api7.gpg
+sudo chmod 0644 /etc/apt/keyrings/openresty.gpg /etc/apt/keyrings/api7.gpg
+
+codename=$(lsb_release -sc)
+openresty_repo="https://openresty.org/package/${arch_path}ubuntu"
+if ! wget -q --spider "${openresty_repo}/dists/${codename}/Release"; then
+    codename=noble
+fi
+echo "deb [signed-by=/etc/apt/keyrings/openresty.gpg] ${openresty_repo} ${codename} main" \
+    | sudo tee /etc/apt/sources.list.d/openresty.list
+echo "deb [signed-by=/etc/apt/keyrings/api7.gpg] https://repos.apiseven.com/packages/${arch_path}debian bullseye main" \
+    | sudo tee /etc/apt/sources.list.d/api7.list
 
 sudo apt-get update
 sudo apt-get install -y openresty-pcre-dev openresty-zlib-dev build-essential gcc g++ cpanminus
@@ -51,11 +61,24 @@ if [ "$OPENRESTY_VERSION" == "source" ]; then
     fi
 fi
 
-install_apisix_runtime
+if [ -n "${PREBUILT_RUNTIME_TARBALL:-}" ]; then
+    echo "Installing prebuilt APISIX Runtime from ${PREBUILT_RUNTIME_TARBALL}"
+    test -f "${PREBUILT_RUNTIME_TARBALL}"
+    sudo rm -rf /usr/local/openresty
+    sudo tar -xzf "${PREBUILT_RUNTIME_TARBALL}" -C /usr/local/
+    ldd /usr/local/openresty/nginx/sbin/nginx
+    /usr/local/openresty/bin/openresty -V
+    sha256sum /usr/local/openresty/nginx/sbin/nginx
+    if [ -f /usr/local/openresty/.custom-runtime-meta ]; then
+        cat /usr/local/openresty/.custom-runtime-meta
+    fi
+else
+    install_apisix_runtime
 
-if [ ! "$ENABLE_FIPS" == "true" ]; then
-curl -o /usr/local/openresty/openssl3/ssl/openssl.cnf \
-    https://raw.githubusercontent.com/api7/apisix-build-tools/apisix-runtime/${APISIX_RUNTIME}/conf/openssl3/openssl.cnf
+    if [ ! "$ENABLE_FIPS" == "true" ]; then
+    curl -o /usr/local/openresty/openssl3/ssl/openssl.cnf \
+        https://raw.githubusercontent.com/api7/apisix-build-tools/apisix-runtime/${APISIX_RUNTIME}/conf/openssl3/openssl.cnf
+    fi
 fi
 
 # patch lua-resty-events

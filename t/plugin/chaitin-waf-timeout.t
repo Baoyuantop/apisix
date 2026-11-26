@@ -100,6 +100,7 @@ __DATA__
                         "methods": ["GET"],
                         "plugins": {
                             "chaitin-waf": {
+                                "mode": "monitor",
                                 "upstream": {
                                    "servers": ["httpbun.org"]
                                }

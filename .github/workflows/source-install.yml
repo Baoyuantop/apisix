@@ -31,7 +31,7 @@ jobs:
           - redhat
     services:
       etcd:
-        image: bitnami/etcd:3.5.4
+        image: bitnamilegacy/etcd:3.5.4
         ports:
           - 2379:2379
           - 2380:2380
@@ -52,13 +52,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Get runner image
+        id: runner_image
+        run: echo "os=${ImageOS}" >> "$GITHUB_OUTPUT"
+
       - name: Cache deps
         uses: actions/cache@v4
         env:
           cache-name: cache-deps
         with:
           path: deps
-          key: ${{ runner.os }}-${{ env.cache-name }}-${{ matrix.os_platform }}-${{ hashFiles('apisix-master-0.rockspec') }}
+          key: ${{ runner.os }}-${{ steps.runner_image.outputs.os }}-${{ env.cache-name }}-${{ matrix.os_platform }}-${{ hashFiles('apisix-master-0.rockspec') }}
 
       - name: Install and start apisix on ${{ matrix.os_platform }}
         env:

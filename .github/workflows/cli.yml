@@ -1,16 +1,9 @@
 name: CLI Test
 
+# CLI tests on this branch are executed inside .github/workflows/build.yml (cli job)
+# so they reuse the single build-runtime artifact. Keep manual dispatch only.
 on:
-  push:
-    branches: [master, 'release/**']
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-  pull_request:
-    branches: [master, 'release/**']
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.run_number || github.ref }}

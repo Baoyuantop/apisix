@@ -21,6 +21,48 @@ repeat_each(1);
 no_long_string();
 no_root_location();
 
+add_block_preprocessor(sub {
+    my ($block) = @_;
+    return unless $block->vector_log_sync;
+
+    $block->set_value("extra_init_by_lua", <<'_EOC_');
+    package.loaded["lib.http_logger_test"] = function(t)
+        local log_path = require("apisix.constants").apisix_lua_home .. "/ci/pod/vector/http.log"
+        local file = io.open(log_path, "rb")
+        local offset = 0
+        if file then
+            offset = assert(file:seek("end"))
+            file:close()
+        end
+
+        -- The existing log format includes $host, so a unique Host identifies this request.
+        local host = "http-logger-" .. ngx.var.request_id .. ".test"
+        local code = t("/hello", "GET", nil, nil, {Host = host})
+        if not code or code >= 300 then
+            return code or ngx.HTTP_INTERNAL_SERVER_ERROR, "request to /hello failed"
+        end
+
+        -- Keep the worker alive until Vector completes the line the next block will read.
+        local marker = '"host":"' .. host .. '"'
+        local deadline = ngx.now() + 6
+        repeat
+            file = io.open(log_path, "rb")
+            if file then
+                local data = file:seek("set", offset) and file:read("*a")
+                file:close()
+                local last_line = data and data:match("([^\n]+)\n$")
+                if last_line and last_line:find(marker, 1, true) then
+                    return code
+                end
+            end
+            ngx.sleep(0.05)
+        until ngx.now() >= deadline
+
+        return ngx.HTTP_GATEWAY_TIMEOUT, "timed out waiting for Vector HTTP log for " .. host
+    end
+_EOC_
+});
+
 run_tests;
 
 __DATA__
@@ -54,6 +96,8 @@ passed
 
 
 === TEST 2: sanity, batch_max_size=1 and concat_method is new_line
+--- vector_log_sync: 1
+--- timeout: 10
 --- config
     location /t {
         content_by_lua_block {
@@ -86,10 +130,10 @@ passed
                 ngx.status = code
             end
 
-            local code, _, body2 = t("/hello", "GET")
-            if code >= 300 then
+            local code, err = require("lib.http_logger_test")(t)
+            if err then
                 ngx.status = code
-                ngx.say("fail")
+                ngx.say(err)
                 return
             end
             ngx.say(body)
@@ -111,6 +155,8 @@ qr/.*route_id":"1".*/
 
 
 === TEST 4: sanity, batch_max_size=2 and concat_method is new_line
+--- vector_log_sync: 1
+--- timeout: 10
 --- config
     location /t {
         content_by_lua_block {
@@ -143,10 +189,10 @@ qr/.*route_id":"1".*/
                 ngx.status = code
             end
 
-            local code, _, body2 = t("/hello", "GET")
-            if code >= 300 then
+            local code, err = require("lib.http_logger_test")(t)
+            if err then
                 ngx.status = code
-                ngx.say("fail")
+                ngx.say(err)
                 return
             end
             ngx.say(body)

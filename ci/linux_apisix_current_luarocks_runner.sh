@@ -27,6 +27,12 @@ do_install() {
     ./ci/linux-install-openresty.sh
     ./utils/linux-install-luarocks.sh
     ./ci/linux-install-etcd-client.sh
+
+    install_nodejs
+    ./ci/prepare_filesystem_mcp.sh
+    pushd t/plugin/mcp
+    pnpm install --frozen-lockfile
+    popd
 }
 
 script() {

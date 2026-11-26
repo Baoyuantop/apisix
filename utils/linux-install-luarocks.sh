@@ -66,3 +66,8 @@ fi
 luarocks config variables.OPENSSL_LIBDIR ${OPENSSL_PREFIX}/lib
 luarocks config variables.OPENSSL_INCDIR ${OPENSSL_PREFIX}/include
 luarocks config variables.YAML_DIR /usr
+
+# lrexlib-pcre needs PCRE1, which Ubuntu 26.04 no longer ships.
+if [ ! -f /usr/include/pcre.h ] && [ -f "${OPENRESTY_PREFIX}/pcre/include/pcre.h" ]; then
+    luarocks config variables.PCRE_DIR "${OPENRESTY_PREFIX}/pcre"
+fi

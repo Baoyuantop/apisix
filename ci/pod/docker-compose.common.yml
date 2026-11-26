@@ -20,7 +20,7 @@ version: "3.8"
 services:
   ## Etcd
   etcd_old:
-    image: bitnami/etcd:3.3.8
+    image: bitnamilegacy/etcd:3.3.8
     restart: unless-stopped
     env_file:
       - ci/pod/etcd/env/common.env
@@ -31,7 +31,7 @@ services:
       - "3380:2380"
 
   etcd:
-    image: bitnami/etcd:3.5.4
+    image: bitnamilegacy/etcd:3.5.4
     restart: unless-stopped
     env_file:
       - ci/pod/etcd/env/common.env
@@ -42,7 +42,7 @@ services:
       - "2380:2380"
 
   etcd_tls:
-    image: bitnami/etcd:3.5.4
+    image: bitnamilegacy/etcd:3.5.4
     restart: unless-stopped
     env_file:
       - ci/pod/etcd/env/common.env
@@ -58,7 +58,7 @@ services:
       - ./t/certs:/certs
 
   etcd_mtls:
-    image: bitnami/etcd:3.5.4
+    image: bitnamilegacy/etcd:3.5.4
     restart: unless-stopped
     env_file:
       - ci/pod/etcd/env/common.env
@@ -106,8 +106,17 @@ services:
 
   ## LocalStack
   localstack:
-    image: localstack/localstack
+    image: localstack/localstack:4.12
     container_name: localstack
     restart: unless-stopped
     ports:
       - "127.0.0.1:4566:4566"            # LocalStack Gateway
+
+  ## httpbin - HTTP Request & Response Service
+  httpbin:
+    image: kennethreitz/httpbin
+    container_name: httpbin
+    restart: unless-stopped
+    ports:
+      - "8280:80"
+      - "8281:80"

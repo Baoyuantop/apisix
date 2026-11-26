@@ -228,15 +228,20 @@ describe('Plugin - Lago', () => {
   // set up
   beforeAll(async () => {
     if (existsSync(LAGO_PATH)) await rm(LAGO_PATH, { recursive: true });
+    process.stderr.write('Lago setup: downloading Compose files\n');
     await downloadComposeFile();
+    process.stderr.write('Lago setup: starting services and migrating the database\n');
     await launchLago();
+    process.stderr.write('Lago setup: provisioning test data\n');
     let res = await provisionLago();
     restAPIKey = res.apiKey;
     lagoClient = res.client;
+    process.stderr.write('Lago setup: ready\n');
   }, 120 * 1000);
 
   // clean up
   afterAll(async () => {
+    process.stderr.write('Lago cleanup: stopping services\n');
     await compose.downAll({
       cwd: LAGO_PATH,
       commandOptions: ['--volumes'],

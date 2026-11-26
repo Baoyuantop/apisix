@@ -20,9 +20,8 @@ jobs:
       run: |
         . ./ci/common.sh
         export_or_prefix
-        export OPENRESTY_VERSION=default
 
-        sudo -E ./ci/linux-install-openresty.sh
+        sudo env OPENRESTY_VERSION=default ./ci/linux-install-openresty.sh
         ./utils/linux-install-luarocks.sh
         sudo -E luarocks install luacheck
 

@@ -11,6 +11,16 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      runtime_mode:
+        description: "Runtime build mode: custom or baseline (official 1.3.2)"
+        required: true
+        default: "custom"
+        type: choice
+        options:
+          - custom
+          - baseline
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.run_number || github.ref }}
@@ -20,20 +30,45 @@ permissions:
   contents: read
 
 jobs:
+  build-runtime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build APISIX Runtime package
+        env:
+          RUNTIME_MODE: ${{ inputs.runtime_mode || 'custom' }}
+          OUTPUT_TARBALL: apisix-runtime-1.3.2-custom.tar.gz
+        run: |
+          sudo -E env \
+            RUNTIME_MODE="$RUNTIME_MODE" \
+            OUTPUT_TARBALL="$OUTPUT_TARBALL" \
+            ./ci/build-custom-runtime.sh
+
+      - name: Upload built APISIX Runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-apisix-runtime
+          path: apisix-runtime-1.3.2-custom.tar.gz
+          retention-days: 7
+
   build:
+    needs: build-runtime
     strategy:
       fail-fast: false
       matrix:
         platform:
-          - ubuntu-latest
+          - ubuntu-22.04
         os_name:
           - linux_openresty
         events_module:
           - lua-resty-worker-events
           - lua-resty-events
         test_dir:
-          - t/plugin/[a-k]*
-          - t/plugin/[l-z]*
+          - t/plugin/[a-k]*.t t/plugin/dubbo-proxy t/plugin/ext-plugin
+          - t/plugin/[l-z]*.t t/plugin/proxy-cache
           - t/admin t/cli t/config-center-yaml t/control t/core t/debug t/discovery t/error_page t/http3/admin t/misc
           - t/node t/pubsub t/router t/script t/secret t/stream-node t/utils t/wasm t/xds-library t/xrpc
 
@@ -81,16 +116,24 @@ jobs:
         run: |
           bash ./ci/free_disk_space.sh
 
+      - name: Download built APISIX Runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: custom-apisix-runtime
+
       - name: Linux Before install
         run: sudo ./ci/${{ matrix.os_name }}_runner.sh before_install
 
       - name: Linux Install
+        env:
+          PREBUILT_RUNTIME_TARBALL: ${{ github.workspace }}/apisix-runtime-1.3.2-custom.tar.gz
         run: |
-          sudo --preserve-env=OPENRESTY_VERSION \
+          sudo --preserve-env=OPENRESTY_VERSION,PREBUILT_RUNTIME_TARBALL \
           ./ci/${{ matrix.os_name }}_runner.sh do_install
 
       - name: Linux launch common services
         run: |
+          echo '127.0.1.1 httpbin.local' | sudo tee -a /etc/hosts
           make ci-env-up project_compose_ci=ci/pod/docker-compose.common.yml
           sudo ./ci/init-common-test-service.sh
 
@@ -167,7 +210,11 @@ jobs:
         env:
           TEST_FILE_SUB_DIR: ${{ matrix.test_dir }}
           TEST_EVENTS_MODULE: ${{ matrix.events_module }}
-        run: sudo -E ./ci/${{ matrix.os_name }}_runner.sh script
+        run: |
+          sudo -E env \
+            TEST_FILE_SUB_DIR="$TEST_FILE_SUB_DIR" \
+            TEST_EVENTS_MODULE="$TEST_EVENTS_MODULE" \
+            ./ci/${{ matrix.os_name }}_runner.sh script
 
       - if: ${{ steps.cache-images.outputs.cache-hit != 'true' }}
         name: Save docker images
@@ -175,3 +222,58 @@ jobs:
           echo "start backing up, $(date)"
           bash ./ci/backup-docker-images.sh ${{ steps.test_env.outputs.type }}
           echo "backup done, $(date)"
+
+  cli:
+    needs: build-runtime
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - ubuntu-22.04
+        job_name:
+          - linux_apisix_current_luarocks
+          - linux_apisix_current_luarocks_in_customed_nginx
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
+    env:
+      SERVER_NAME: ${{ matrix.job_name }}
+      OPENRESTY_VERSION: default
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        env:
+          cache-name: cache-deps
+        with:
+          path: deps
+          key: ${{ runner.os }}-${{ env.cache-name }}-${{ matrix.job_name }}-${{ hashFiles('apisix-master-0.rockspec') }}
+
+      - name: Download built APISIX Runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: custom-apisix-runtime
+
+      - name: Linux launch common services
+        run: |
+          project_compose_ci=ci/pod/docker-compose.common.yml make ci-env-up
+
+      - name: Linux Before install
+        run: sudo ./ci/${{ matrix.job_name }}_runner.sh before_install
+
+      - name: Linux Install
+        env:
+          PREBUILT_RUNTIME_TARBALL: ${{ github.workspace }}/apisix-runtime-1.3.2-custom.tar.gz
+        run: |
+          sudo --preserve-env=OPENRESTY_VERSION,PREBUILT_RUNTIME_TARBALL \
+          ./ci/${{ matrix.job_name }}_runner.sh do_install
+
+      - name: Linux Script
+        run: |
+          sudo chmod +x /home/runner
+          sudo ./ci/${{ matrix.job_name }}_runner.sh script

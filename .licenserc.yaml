@@ -38,6 +38,9 @@ header:
     - '**/*.svg'
     # Exclude CI env_file
     - 'ci/pod/**/*.env'
+    # Runtime build inputs use patch and checksum formats without source headers.
+    - 'ci/patches/runtime-1.3.2.patch'
+    - 'ci/patches/runtime-1.3.2.sha256'
     # eyes has some limitation to handle git pattern
     - '**/*.log'
     # Exclude test toolkit files

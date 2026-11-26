@@ -190,6 +190,7 @@ true
 
 
 === TEST 3: mixing set custom and default values
+# This configuration-only test uses a placeholder host outside the test cluster.
 --- yaml_config
 apisix:
   node_listen: 1984
@@ -223,6 +224,8 @@ GET /compare
 Content-type: application/json
 --- response_body
 true
+--- no_error_log eval
+qr/\[error\](?!.*connect apiserver failed, apiserver\.host: sample\.com, apiserver\.port: 6443,)/
 
 
 
@@ -382,9 +385,8 @@ GET /update_token
 --- log_level: debug
 --- grep_error_log eval
 qr/re-read the token value/
---- grep_error_log_out
-re-read the token value
-re-read the token value
+--- grep_error_log_out eval
+qr/\A(?:re-read the token value\s*){2,}\z/
 
 
 

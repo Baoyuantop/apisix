@@ -27,12 +27,22 @@ if [[ $ARCH == "arm64" ]] || [[ $ARCH == "aarch64" ]]; then
     arch_path="arm64/"
 fi
 
-wget -qO - https://openresty.org/package/pubkey.gpg | sudo apt-key add -
-wget -qO - http://repos.apiseven.com/pubkey.gpg | sudo apt-key add -
 sudo apt-get -y update --fix-missing
-sudo apt-get -y install software-properties-common
-sudo add-apt-repository -y "deb https://openresty.org/package/${arch_path}ubuntu $(lsb_release -sc) main"
-sudo add-apt-repository -y "deb http://repos.apiseven.com/packages/${arch_path}debian bullseye main"
+sudo apt-get -y install wget lsb-release gnupg
+sudo mkdir -p /etc/apt/keyrings
+wget -qO - https://openresty.org/package/pubkey.gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/openresty.gpg
+wget -qO - https://repos.apiseven.com/pubkey.gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/api7.gpg
+sudo chmod 0644 /etc/apt/keyrings/openresty.gpg /etc/apt/keyrings/api7.gpg
+
+codename=$(lsb_release -sc)
+openresty_repo="https://openresty.org/package/${arch_path}ubuntu"
+if ! wget -q --spider "${openresty_repo}/dists/${codename}/Release"; then
+    codename=noble
+fi
+echo "deb [signed-by=/etc/apt/keyrings/openresty.gpg] ${openresty_repo} ${codename} main" \
+    | sudo tee /etc/apt/sources.list.d/openresty.list
+echo "deb [signed-by=/etc/apt/keyrings/api7.gpg] https://repos.apiseven.com/packages/${arch_path}debian bullseye main" \
+    | sudo tee /etc/apt/sources.list.d/api7.list
 
 sudo apt-get update
 sudo apt-get install -y openresty-pcre-dev openresty-zlib-dev build-essential gcc g++ cpanminus

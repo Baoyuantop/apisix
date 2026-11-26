@@ -63,22 +63,35 @@ function install_dependencies_with_yum() {
 function install_dependencies_with_apt() {
     # add OpenResty source
     sudo apt-get update
-    sudo apt-get -y install software-properties-common wget lsb-release gnupg patch
-    wget -qO - https://openresty.org/package/pubkey.gpg | sudo apt-key add -
+    sudo apt-get -y install wget lsb-release gnupg patch
+    sudo mkdir -p /etc/apt/keyrings
+    wget -qO - https://openresty.org/package/pubkey.gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/openresty.gpg
+    sudo chmod 0644 /etc/apt/keyrings/openresty.gpg
     arch=$(uname -m | tr '[:upper:]' '[:lower:]')
     arch_path=""
     if [[ $arch == "arm64" ]] || [[ $arch == "aarch64" ]]; then
         arch_path="arm64/"
     fi
-    if [[ "${1}" == "ubuntu" ]]; then
-        sudo add-apt-repository -y "deb http://openresty.org/package/${arch_path}ubuntu $(lsb_release -sc) main"
-    elif [[ "${1}" == "debian" ]]; then
-        sudo add-apt-repository -y "deb http://openresty.org/package/${arch_path}debian $(lsb_release -sc) openresty"
+    codename=$(lsb_release -sc)
+    repo_url="https://openresty.org/package/${arch_path}${1}"
+    # The OpenResty development packages are self-contained under /usr/local/openresty.
+    # Use the Noble repository until the newer Ubuntu repository is available.
+    if [[ "${1}" == "ubuntu" ]] && ! wget -q --spider "${repo_url}/dists/${codename}/Release"; then
+        codename=noble
     fi
+    component=main
+    if [[ "${1}" == "debian" ]]; then
+        component=openresty
+    fi
+    echo "deb [signed-by=/etc/apt/keyrings/openresty.gpg] ${repo_url} ${codename} ${component}" \
+        | sudo tee /etc/apt/sources.list.d/openresty.list
     sudo apt-get update
 
     # install some compilation tools
-    sudo apt-get install -y curl make gcc g++ cpanminus libpcre3 libpcre3-dev libyaml-dev unzip openresty-zlib-dev openresty-pcre-dev
+    sudo apt-get install -y curl make gcc g++ cpanminus libyaml-dev unzip openresty-zlib-dev openresty-pcre-dev
+    if [ -n "$(apt-cache show --no-all-versions libpcre3-dev 2>/dev/null)" ]; then
+        sudo apt-get install -y libpcre3-dev
+    fi
 }
 
 # Identify the different distributions and call the corresponding function

@@ -114,7 +114,7 @@ local _M = {
 local function request_to_llm(conf, request_table, ctx)
     local ok, ai_driver = pcall(require, "apisix.plugins.ai-drivers." .. conf.provider)
     if not ok then
-        return nil, nil, "failed to load ai-driver: " .. conf.provider
+        return nil, "failed to load ai-driver: " .. conf.provider
     end
 
     local extra_opts = {
@@ -124,18 +124,7 @@ local function request_to_llm(conf, request_table, ctx)
         model_options = conf.options
     }
 
-    local res, err, httpc = ai_driver:request(conf, request_table, extra_opts)
-    if err then
-        return nil, nil, err
-    end
-
-    local resp_body, err = res:read_body()
-    httpc:close()
-    if err then
-        return nil, nil, err
-    end
-
-    return res, resp_body
+    return ai_driver:request(ctx, conf, request_table, extra_opts)
 end
 
 
@@ -201,15 +190,15 @@ function _M.access(conf, ctx)
     }
 
     -- Send request to LLM service
-    local res, resp_body, err = request_to_llm(conf, ai_request_table, ctx)
-    if err then
-        core.log.error("failed to request to LLM service: ", err)
+    local status, resp_body = request_to_llm(conf, ai_request_table, ctx)
+    if not status then
+        core.log.error("failed to request to LLM service: ", resp_body)
         return HTTP_INTERNAL_SERVER_ERROR
     end
 
     -- Handle LLM response
-    if res.status > 299 then
-        core.log.error("LLM service returned error status: ", res.status)
+    if status > 299 then
+        core.log.error("LLM service returned error status: ", status)
         return HTTP_INTERNAL_SERVER_ERROR
     end
 
